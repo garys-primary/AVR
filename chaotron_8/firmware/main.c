@@ -252,13 +252,13 @@ void initUSART(){
 // char* inMsg;
 // inMsg = malloc(10);
 
+
 	UBRRH = UBRRH_VALUE; //set baud rate
   UBRRL = UBRRL_VALUE;
 	
   //MIDI format: start-bit + 8bit-data + stop-bit	
   UCSRB = (1<<RXEN) | (1<<RXCIE);   //Enable RX, enable interrupt on complete
 	UCSRC = (1<<URSEL) | (1<<UCSZ1) | (1<<UCSZ0); 	//set 8 bit of data, start & 1 end bits are default
-	
 
 }
 
@@ -310,12 +310,12 @@ int main(void){
 	
 	ADMUX=0b0101;
 	
-	//uint16_t tabValue = 0;
+	uint16_t tabValue = 0;
 	//uint16_t lfoStep = 0;
 	//uint8_t random = 0;
 	//uint8_t slowClock = 0;
 	
-	/*
+	
 	int outVal = 0;	
 	int tabStep = 1;
 	int decayStep = 0;
@@ -323,7 +323,7 @@ int main(void){
 	int randPitch = 0;
 	int tonyNoisy = 0;
 	int lfoSpeed = 0;
-	*/
+	
 	//int ampProb = 0;
 	//float subAttack = 0;
 	//float amplitude = 0;
@@ -331,8 +331,9 @@ int main(void){
 	
 	
 	while(1){	
+
+		outputToPins(outVal);	//outVal	
 		/*
-		
 		if(!(ADCSRA & (1<<ADSC))){
 			switch(ADMUX){
 				case 0b0000: //ADC5	RV6
@@ -362,17 +363,18 @@ int main(void){
 				}
 			ADCSRA |= (1<<ADSC);
 		}
+		
 		*/
 		
 		
-		/*
 		if(tabValue + tabStep/128>=1024)
 			tabValue += (float)(tabStep/128)-1024;
 		else
 			tabValue += tabStep/8;
-		*/
 		
-		//tabValue += tabStep/8;
+		
+		tabValue += tabStep/8;
+		
 		
 		/*
 		if(isHigh(PINB, PB5))
@@ -383,9 +385,9 @@ int main(void){
 			amplitude-=(decayStep/(1024.0*200.0));
 		else
 			amplitude=0;
-		*/
 		
-		/*
+		
+		
 		if(isHigh(PINB, PB5))
 			amplitude = 1023;
 		*/
@@ -398,18 +400,11 @@ int main(void){
 		) * amplitude;
 		*/
 		
-		//outVal = pgm_read_byte_near(randomTable + tabValue) * amplitude;
+		outVal = pgm_read_byte_near(sineTable + tabValue);
 		//outVal = genSine(tabValue) * amplitude;
 		
-		/*clock++;
-		if(clock>tabStep){
-			outVal = outVal==0 ? tonyNoisy : 0;
-			clock=0;
-		}
+		clock++;	
 		
-		
-		outputToPins(outVal);	//outVal		
-		*/
 	}
 	return 0;
 }
