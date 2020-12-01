@@ -95,24 +95,6 @@ const PROGMEM uint8_t screwTable[] = {
 
 const PROGMEM uint8_t squareTable[] = {0,255};
 
-volatile int intrCount = 0;
-volatile int clock = 0;
-volatile uint16_t frame = 0;
-
-volatile int RV1 = 0;
-volatile int RV2 = 0;
-volatile int RV3 = 0;
-volatile int RV4 = 0;
-volatile int RV5 = 0;
-volatile int RV6 = 0;
-
-volatile float step = 0;
-volatile float osc1Phase = 0;
-
-//volatile uint8_t firSize = 10;
-volatile uint16_t frameSum = 0;
-volatile uint16_t frames[] = {0,0,0,0,0,0,0,0,0,0};
-
 
 void outputToPins(int val);
 
@@ -146,12 +128,31 @@ void initIO(){
 
 void initTimer(){	
 	//create audio out frame @44100 Hz
-  //init TCNT 1 (16 bit) into CTC mode (p. 87)
+	//init TCNT 1 (16 bit) into CTC mode (p. 87)
 	OCR1A = 362; //value to reach
-  TCCR1A = 0x00; //no setting in this register
+	TCCR1A = 0x00; //no setting in this register
 	TCCR1B = (1 << CS10) | (1 << WGM12); //no prescale, internal clock, CTC mode w/ OCR1A as TOP value
 	TIMSK = (1 << OCIE1A); //enable interrupts on compare p.100
 }
+
+volatile int intrCount = 0;
+volatile uint8_t count8 = 0;
+volatile int clock = 0;
+volatile uint16_t frame = 0;
+
+volatile int RV1 = 0;
+volatile int RV2 = 0;
+volatile int RV3 = 0;
+volatile int RV4 = 0;
+volatile int RV5 = 0;
+volatile int RV6 = 0;
+
+volatile float step = 0;
+volatile float osc1Phase = 0;
+
+//volatile uint8_t firSize = 10;
+volatile uint16_t frameSum = 0;
+volatile uint16_t frames[] = {0,0,0,0,0,0,0,0,0,0};
 
 volatile uint8_t i = 0;
 volatile int pitch = 300;
@@ -159,58 +160,30 @@ volatile int pitch = 300;
 ISR(TIMER1_COMPA_vect){
 	outputToPins(frame);
 
-	intrCount++;
-	
-	if(!(ADCSRA & (1<<ADSC))){
-		switch(ADMUX){
-			case 0b0000: //[ . ]  |
-				RV1 = ADCW;
-				ADMUX = 0b0001;
-				break;
-			case 0b0001: //[  .]  |
-				RV2 = ADCW;
-				ADMUX = 0b0010;
-				break;
-			case 0b0010: //[  ']  |
-				RV3 = ADCW;
-				ADMUX = 0b0011;
-				break;
-			case 0b0011: //[ ' ]  |
-				RV4 = ADCW;
-				ADMUX = 0b0100;
-				break;
-			case 0b0100: //['  ]
-				RV5 = ADCW;
-				ADMUX = 0b0101;
-				break;
-			case 0b0101: //[.  ]
-				RV6 = ADCW;
-				ADMUX = 0b0000;
-				break;
-			}
-		ADCSRA |= (1<<ADSC);
-	}
+	//intrCount++;
+	count8++;
 	
 	//freq range: 10Hz .. 20000Hz
 	//knob range: 0    .. 1023
 	//step=20 fn= RV*20+10
 	
 	//generate square
-	
-	if(intrCount > pitch){
-		frame = frame==0 ? RV4 : 0;
-		intrCount = 0;
-	}
-	
+	//if(intrCount > pitch){ frame = frame==0 ? RV4 : 0; intrCount = 0;}
 	//RV1 = 500;
 	
+	//TEST: nyquist frequency, expected 22050
+	frame = intrCount++%2==0 ? 0 : RV6;
+
 	//play from table
-	step = RV1/1024.0*100.0;
+	step = RV1/1.024;
+	osc1Phase = (osc1Phase+step > 1023 ? 1023-osc1Phase+step : osc1Phase+step);
+	frame += pgm_read_byte_near(sineTable + (int)round(osc1Phase));
 	
-	osc1Phase = osc1Phase+step>1023 ? 1023-osc1Phase+step : osc1Phase+step;
-	//frame = pgm_read_byte_near(sineTable + (int)round(osc1Phase));
-	//frame = pgm_read_byte_near(sawTable + (int)round(osc1Phase/4));
+
+	//Yay yay yay yay
+	//frame = pgm_read_byte_near(sawTable + (int)round(osc1Phase/4.0));
 	
+
 	
 	//digital overdrive (needs work)
 	//frame = (int)round(frame*(1024.0/(RV6+1)));
@@ -254,10 +227,10 @@ void initUSART(){
 
 
 	UBRRH = UBRRH_VALUE; //set baud rate
-  UBRRL = UBRRL_VALUE;
+	UBRRL = UBRRL_VALUE;
 	
-  //MIDI format: start-bit + 8bit-data + stop-bit	
-  UCSRB = (1<<RXEN) | (1<<RXCIE);   //Enable RX, enable interrupt on complete
+	//MIDI format: start-bit + 8bit-data + stop-bit	
+	UCSRB = (1<<RXEN) | (1<<RXCIE);   //Enable RX, enable interrupt on complete
 	UCSRC = (1<<URSEL) | (1<<UCSZ1) | (1<<UCSZ0); 	//set 8 bit of data, start & 1 end bits are default
 
 }
@@ -266,16 +239,16 @@ void initUSART(){
 
 void outputToPins(int val){
 	//LSB
-	isHigh(val, 0) ? sbi(PORTD, PD2) : cbi(PORTD, PD2);
-	isHigh(val, 1) ? sbi(PORTD, PD3) : cbi(PORTD, PD3);
-	isHigh(val, 2) ? sbi(PORTD, PD4) : cbi(PORTD, PD4);
-	isHigh(val, 3) ? sbi(PORTD, PD5) : cbi(PORTD, PD5);
-	isHigh(val, 4) ? sbi(PORTD, PD6) : cbi(PORTD, PD6);
-	isHigh(val, 5) ? sbi(PORTD, PD7) : cbi(PORTD, PD7);
-	isHigh(val, 6) ? sbi(PORTB, PB0) : cbi(PORTB, PB0);
-	isHigh(val, 7) ? sbi(PORTB, PB1) : cbi(PORTB, PB1);
-	isHigh(val, 8) ? sbi(PORTB, PB2) : cbi(PORTB, PB2);
-	isHigh(val, 9) ? sbi(PORTB, PB3) : cbi(PORTB, PB3);
+	isHigh(val, 9) ? sbi(PORTD, PD2) : cbi(PORTD, PD2);
+	isHigh(val, 8) ? sbi(PORTD, PD3) : cbi(PORTD, PD3);
+	isHigh(val, 7) ? sbi(PORTD, PD4) : cbi(PORTD, PD4);
+	isHigh(val, 6) ? sbi(PORTD, PD5) : cbi(PORTD, PD5);
+	isHigh(val, 5) ? sbi(PORTD, PD6) : cbi(PORTD, PD6);
+	isHigh(val, 4) ? sbi(PORTD, PD7) : cbi(PORTD, PD7);
+	isHigh(val, 3) ? sbi(PORTB, PB0) : cbi(PORTB, PB0);
+	isHigh(val, 2) ? sbi(PORTB, PB1) : cbi(PORTB, PB1);
+	isHigh(val, 1) ? sbi(PORTB, PB2) : cbi(PORTB, PB2);
+	isHigh(val, 0) ? sbi(PORTB, PB3) : cbi(PORTB, PB3);
 	//MSB
 }
 
@@ -294,7 +267,7 @@ uint8_t generate(int tabValue, int tonyNoisy, uint8_t shift){
 		return pgm_read_byte_near(screwTable + (tabValue + shift)/32);
 	} else if (tonyNoisy<768) {
 		return pgm_read_byte_near(randomTable + tabValue + shift);
-	}	else {
+	} else {
 		return pgm_read_byte_near(randomTable + clock);
 	}	*/
 }
@@ -302,109 +275,48 @@ uint8_t generate(int tabValue, int tonyNoisy, uint8_t shift){
 int main(void){
 	
 	initIO();
-	initUSART();
+	//initUSART();
 	initTimer();
 	initADC();
 	
 	sei();
 	
-	ADMUX=0b0101;
-	
-	uint16_t tabValue = 0;
-	//uint16_t lfoStep = 0;
-	//uint8_t random = 0;
-	//uint8_t slowClock = 0;
-	
-	
-	int outVal = 0;	
-	int tabStep = 1;
-	int decayStep = 0;
-	int ampMod = 0;
-	int randPitch = 0;
-	int tonyNoisy = 0;
-	int lfoSpeed = 0;
-	
-	//int ampProb = 0;
-	//float subAttack = 0;
-	//float amplitude = 0;
-	//float subAmp = 0;
-	
-	
+	ADMUX=0b0101; //???
+
 	while(1){	
 
-		outputToPins(outVal);	//outVal	
-		/*
+		//do nothing here. The sound is generated on timer interrupt.
+		
+		//Read knobs:
 		if(!(ADCSRA & (1<<ADSC))){
 			switch(ADMUX){
-				case 0b0000: //ADC5	RV6
-					randPitch = ADCW;
+				case 0b0000: //[ . ]  |
+					RV1 = ADCW;
 					ADMUX = 0b0001;
 					break;
-				case 0b0001: //ADC4 RV5
-					tabStep = ADCW;
+				case 0b0001: //[  .]  |
+					RV2 = ADCW;
 					ADMUX = 0b0010;
 					break;
-				case 0b0010: //ADC3	RV4
-					tonyNoisy = ADCW;
+				case 0b0010: //[  ']  |
+					RV3 = ADCW;
 					ADMUX = 0b0011;
 					break;
-				case 0b0011: //ADC2	RV3
-					lfoSpeed = ADCW;
+				case 0b0011: //[ ' ]  |
+					RV4 = ADCW;
 					ADMUX = 0b0100;
 					break;
-				case 0b0100: //ADC1	RV2
-					decayStep = ADCW;
+				case 0b0100: //['  ]
+					RV5 = ADCW;
 					ADMUX = 0b0101;
 					break;
-				case 0b0101: //ADC0	RV1
-					ampMod = ADCW;
+				case 0b0101: //[.  ]
+					RV6 = ADCW;
 					ADMUX = 0b0000;
 					break;
 				}
 			ADCSRA |= (1<<ADSC);
 		}
-		
-		*/
-		
-		
-		if(tabValue + tabStep/128>=1024)
-			tabValue += (float)(tabStep/128)-1024;
-		else
-			tabValue += tabStep/8;
-		
-		
-		tabValue += tabStep/8;
-		
-		
-		/*
-		if(isHigh(PINB, PB5))
-			amplitude = 1;
-
-				
-		if(amplitude>0)
-			amplitude-=(decayStep/(1024.0*200.0));
-		else
-			amplitude=0;
-		
-		
-		
-		if(isHigh(PINB, PB5))
-			amplitude = 1023;
-		*/
-		
-		/*outVal = (
-			generate(tabValue, tonyNoisy, 0) 
-			//+ generate(tabValue, tonyNoisy, 1) 
-			//+ generate(tabValue, tonyNoisy, 5) 
-			//+ generate(tabValue, tonyNoisy, 9) 
-		) * amplitude;
-		*/
-		
-		outVal = pgm_read_byte_near(sineTable + tabValue);
-		//outVal = genSine(tabValue) * amplitude;
-		
-		clock++;	
-		
 	}
 	return 0;
 }
