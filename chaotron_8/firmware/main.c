@@ -7,6 +7,7 @@
 
 #define	F_CPU		16000000UL
 #define BAUD		31250
+#define BAUD_PRESCALE (((F_CPU / (BAUD * 16UL))) - 1)	
 
 #include <avr/io.h>
 #include <util/delay.h>
@@ -104,13 +105,14 @@ void initIO(){
 	//reg. bit numbering: 76543210
 	
 	// o = audio out
-	// m = midi IO
+	// m = midi in
+	// n = noise in
 	// b = button in
 	// c = adc ctrl in
 	// x = doesn not exist on MCU
 	
-	// destin:oooooomm 
-	DDRD  = 0b11111110;
+	// destin:oooooonm 
+	DDRD  = 0b11111100;
 	//PORTD = 0b11000000;
 	
 	// destin:xxbboooo
@@ -138,7 +140,14 @@ void initTimer(){
 volatile int intrCount = 0;
 volatile uint8_t count8 = 0;
 volatile int clock = 0;
+
+volatile uint8_t MIDI_char1 = 0;
+volatile uint8_t MIDI_char2 = 0;
+volatile uint8_t MIDI_char3 = 0;
+volatile uint8_t MIDI_char_ptr = 0;
+
 volatile uint16_t frame = 0;
+volatile uint16_t _frame = 0;
 
 volatile int RV1 = 0;
 volatile int RV2 = 0;
@@ -147,51 +156,93 @@ volatile int RV4 = 0;
 volatile int RV5 = 0;
 volatile int RV6 = 0;
 
-volatile float step = 0;
-volatile float osc1Phase = 0;
+volatile uint16_t osc1Phase;
 
 //volatile uint8_t firSize = 10;
 volatile uint16_t frameSum = 0;
 volatile uint16_t frames[] = {0,0,0,0,0,0,0,0,0,0};
 
 volatile uint8_t i = 0;
-volatile int pitch = 300;
+volatile int pitch = 2;
+
 
 ISR(TIMER1_COMPA_vect){
+	//::::::::::::::::::::::::::::::::::::::::::::::::
+	//Frame generator. This code is called 44100 times per second	
+	//
+	//1. Output generated in last run frame to DAC.
+	//   This ensures the frame rate f0 is stable.
+	//2. Generate a frame. Keep processing the same frame
+	//3. .... PROFIT (Store frame) 
+
 	outputToPins(frame);
+
+	_frame = frame;
+	frame = 0;
+
+	//DEV ZONE-----------------------
 
 	//intrCount++;
 	count8++;
-	
-	//freq range: 10Hz .. 20000Hz
-	//knob range: 0    .. 1023
-	//step=20 fn= RV*20+10
-	
-	//generate square
-	//if(intrCount > pitch){ frame = frame==0 ? RV4 : 0; intrCount = 0;}
-	//RV1 = 500;
-	
-	//TEST: nyquist frequency, expected 22050
-	frame = intrCount++%2==0 ? 0 : RV6;
 
-	//play from table
-	step = RV1/1.024;
+	//++++++++++++++++++++++++++++++++++++++++++++++++++
+	//++++++++++++++++++++++++++++++++++++++++++++++++++
+	//                      MIDI
+
+
+	//--------------------------------------------------
+	//--------------------------------------------------
+	//                   GENERATORS
+
+	
+	//--------------------------------------------------
+	//TEST: Generate Nyquist frequency, expected 22050
+	//frame += intrCount++%2==0 ? 0 : RV6;
+	//--------------------------------------------------
+
+
+	//-------------------------------------------------
+	//  Noise generator
+
+
+	//--------------------------------------------------
+	//play from table - float option TODO: the knob is inverted
+	/*step = RV1/1.024;
 	osc1Phase = (osc1Phase+step > 1023 ? 1023-osc1Phase+step : osc1Phase+step);
-	frame += pgm_read_byte_near(sineTable + (int)round(osc1Phase));
-	
+	frame += pgm_read_byte_near(sineTable + (int)osc1Phase);
+	*/
+	//--------------------------------------------------
 
-	//Yay yay yay yay
-	//frame = pgm_read_byte_near(sawTable + (int)round(osc1Phase/4.0));
-	
 
-	
+
+
+	//--------------------------------------------------
+	//play from table - int option TODO: the knob is inverted
+	//osc1Phase += RV1;
+	osc1Phase += pitch;
+	if(osc1Phase >= 1023) 
+		osc1Phase -= 1023;
+	frame += pgm_read_byte_near(sineTable + osc1Phase);
+	//--------------------------------------------------
+
+
+
+
+
+
+	//===========================================
+	//===========================================
+	///                   EFFECTS
+
+	//===========================================
 	//digital overdrive (needs work)
 	//frame = (int)round(frame*(1024.0/(RV6+1)));
+	//===========================================
 	
-	
+	//===========================================
 	//bit shift (???) - steppy amplitude but not noisy
 	//frame = frame >> RV5/64;
-	
+	//===========================================
 	
 	//Lowpass FIR
 	/*frameSum = frame;
@@ -203,7 +254,26 @@ ISR(TIMER1_COMPA_vect){
 	frame = (uint16_t)round(frameSum/(RV4/11));
 	*/
 	
-	
+	//============================================
+	// Filter 1
+
+	//frame = 
+
+
+
+	//++++++++++++++++++++++++++++++++++++++++++++++
+	//++++++++++++++++++++++++++++++++++++++++++++++
+	//		   SOUND QUALITY IMPROVEMENTS
+	//
+
+
+	//::::::::::::::::::::::::::::::::::::::::::::::::
+	/*					NOTES
+					
+		1 step of DAC = 5mV
+
+	*/
+	//::::::::::::::::::::::::::::::::::::::::::::::::
 }
 
 void initADC(){
@@ -211,7 +281,18 @@ void initADC(){
 }
 
 ISR(USART_RXC_vect){
-	pitch+=1;
+	/*
+	MIDI_char_ptr++;
+	//read 3 bytes
+	if(MIDI_char_ptr==0){
+		MIDI_char1 = UDR;
+	}else if(MIDI_char_ptr==1){
+		MIDI_char2 = UDR;
+	}else if(MIDI_char_ptr==2){
+		MIDI_char3 = UDR;
+		MIDI_char_ptr = 0;
+	}
+	*/
 }
 
 void initUSART(){
@@ -222,12 +303,11 @@ void initUSART(){
 //vector name: USART_RXC, p.47
 
 //allocate 10 bytes for buffer
-// char* inMsg;
-// inMsg = malloc(10);
+ //char* inMsg;
+ //inMsg = malloc(10);
 
-
-	UBRRH = UBRRH_VALUE; //set baud rate
-	UBRRL = UBRRL_VALUE;
+	UBRRH = BAUD_PRESCALE; //set baud rate
+	UBRRL = (BAUD_PRESCALE >> 8);
 	
 	//MIDI format: start-bit + 8bit-data + stop-bit	
 	UCSRB = (1<<RXEN) | (1<<RXCIE);   //Enable RX, enable interrupt on complete
@@ -275,7 +355,7 @@ uint8_t generate(int tabValue, int tonyNoisy, uint8_t shift){
 int main(void){
 	
 	initIO();
-	//initUSART();
+	initUSART();
 	initTimer();
 	initADC();
 	
@@ -285,7 +365,7 @@ int main(void){
 
 	while(1){	
 
-		//do nothing here. The sound is generated on timer interrupt.
+		//The sound is generated on timer interrupt.
 		
 		//Read knobs:
 		if(!(ADCSRA & (1<<ADSC))){
@@ -317,6 +397,30 @@ int main(void){
 				}
 			ADCSRA |= (1<<ADSC);
 		}
+
+		//read midi
+		if((UCSRA & (1 << RXC))){
+			MIDI_char_ptr++;
+
+			if(MIDI_char_ptr==0)
+				MIDI_char1=UDR;
+			else if(MIDI_char_ptr==1)
+				MIDI_char2=UDR;
+			else if(MIDI_char_ptr==2){
+				MIDI_char2=UDR;
+				MIDI_char_ptr=0;
+			}
+
+			//	command = UDR;
+			pitch = MIDI_char_ptr+1;
+
+			if(MIDI_char1>>4 == 0b1001){ //note on
+				//pitch = MIDI_char2;
+			}
+		}
+
+
+
 	}
 	return 0;
 }
