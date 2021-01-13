@@ -10,7 +10,7 @@
 #define BAUD_PRESCALE (((F_CPU / (BAUD * 16UL))) - 1)	
 
 #include <avr/io.h>
-#include <util/delay.h>
+//#include <util/delay.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <math.h>
@@ -99,6 +99,10 @@ const PROGMEM uint8_t squareTable[] = {0,255};
 
 void outputToPins(int val);
 
+
+
+
+
 void initIO(){
 	//DDR  in=0 out=1
 	//PORT in=1 out=0 - 1=pull-up 0=set pins low
@@ -137,14 +141,17 @@ void initTimer(){
 	TIMSK = (1 << OCIE1A); //enable interrupts on compare p.100
 }
 
+//playground
+volatile uint8_t arr[3] = {10,15,20};
+
+
 volatile int intrCount = 0;
 volatile uint8_t count8 = 0;
 volatile int clock = 0;
 
-volatile uint8_t MIDI_char1 = 0;
-volatile uint8_t MIDI_char2 = 0;
-volatile uint8_t MIDI_char3 = 0;
-volatile uint8_t MIDI_char_ptr = 0;
+volatile unsigned char MIDI_byte;
+volatile uint8_t MIDI_chars_received = 0;
+volatile uint8_t MIDI_message[3] = {0,0,0};
 
 volatile uint16_t frame = 0;
 volatile uint16_t _frame = 0;
@@ -159,8 +166,8 @@ volatile int RV6 = 0;
 volatile uint16_t osc1Phase;
 
 //volatile uint8_t firSize = 10;
-volatile uint16_t frameSum = 0;
-volatile uint16_t frames[] = {0,0,0,0,0,0,0,0,0,0};
+//volatile uint16_t frameSum = 0;
+//volatile uint16_t frames[] = {0,0,0,0,0,0,0,0,0,0};
 
 volatile uint8_t i = 0;
 volatile int pitch = 2;
@@ -281,23 +288,21 @@ void initADC(){
 }
 
 ISR(USART_RXC_vect){
-	/*
-	MIDI_char_ptr++;
-	//read 3 bytes
-	if(MIDI_char_ptr==0){
-		MIDI_char1 = UDR;
-	}else if(MIDI_char_ptr==1){
-		MIDI_char2 = UDR;
-	}else if(MIDI_char_ptr==2){
-		MIDI_char3 = UDR;
-		MIDI_char_ptr = 0;
+	MIDI_byte = UDR;
+	MIDI_chars_received++;
+
+	if(UDR >= 0b10000000){  //is command   
+		MIDI_chars_received = 0;
+	}else{ //is data
+		pitch = 30;
 	}
-	*/
+
+	MIDI_message[MIDI_chars_received] = MIDI_byte;
 }
 
 void initUSART(){
 //Interrupt vector p. 46
-//v# 	addr. 	source				definition
+//v# 	addr. 		source			definition
 //12	0x00B		USART, RXC		USART, Rx Complete
 
 //vector name: USART_RXC, p.47
@@ -306,8 +311,8 @@ void initUSART(){
  //char* inMsg;
  //inMsg = malloc(10);
 
-	UBRRH = BAUD_PRESCALE; //set baud rate
-	UBRRL = (BAUD_PRESCALE >> 8);
+	UBRRH = UBRRL_VALUE; //BAUD_PRESCALE; //set baud rate
+	UBRRL = UBRRH_VALUE; //(BAUD_PRESCALE >> 8);
 	
 	//MIDI format: start-bit + 8bit-data + stop-bit	
 	UCSRB = (1<<RXEN) | (1<<RXCIE);   //Enable RX, enable interrupt on complete
@@ -332,36 +337,17 @@ void outputToPins(int val){
 	//MSB
 }
 
-
-uint8_t generate(int tabValue, int tonyNoisy, uint8_t shift){
-	//uint8_t random = pgm_read_byte_near(randomTable + clock);
-	//tonyNoisy+=(random/4);
-	
-	return pgm_read_byte_near(sineTable + tabValue + shift);
-	
-	/*if(tonyNoisy<128){
-		return pgm_read_byte_near(sineTable + tabValue + shift);
-	} else if (tonyNoisy<256) {
-		return pgm_read_byte_near(squareTable + (tabValue + shift)/512);
-	} else if (tonyNoisy<512) {
-		return pgm_read_byte_near(screwTable + (tabValue + shift)/32);
-	} else if (tonyNoisy<768) {
-		return pgm_read_byte_near(randomTable + tabValue + shift);
-	} else {
-		return pgm_read_byte_near(randomTable + clock);
-	}	*/
-}
 		
 int main(void){
-	
+	cli();
+
 	initIO();
 	initUSART();
 	initTimer();
 	initADC();
 	
 	sei();
-	
-	ADMUX=0b0101; //???
+	ADMUX=0b0101; //start ADC
 
 	while(1){	
 
@@ -399,24 +385,33 @@ int main(void){
 		}
 
 		//read midi
-		if((UCSRA & (1 << RXC))){
-			MIDI_char_ptr++;
+		/*if((UCSRA & (1 << RXC))){
+			
+			if(UDR >= 0b10000000) //is command   
+				MIDI_chars_received = 0;
 
-			if(MIDI_char_ptr==0)
-				MIDI_char1=UDR;
-			else if(MIDI_char_ptr==1)
-				MIDI_char2=UDR;
-			else if(MIDI_char_ptr==2){
-				MIDI_char2=UDR;
-				MIDI_char_ptr=0;
-			}
+			MIDI_message[MIDI_chars_received++] = UDR;
+			
+		}*/
 
-			//	command = UDR;
-			pitch = MIDI_char_ptr+1;
+		//process MIDI
+		if(MIDI_chars_received > 1){ 
+			//pitch = 10;
+			if((MIDI_message[0] >> 4) == 0b1001) //note on
+				pitch = 20; //MIDI_message[1];
+		}
 
-			if(MIDI_char1>>4 == 0b1001){ //note on
-				//pitch = MIDI_char2;
-			}
+
+		//test
+		clock++;
+
+		if((MIDI_message[0] >> 4) == 0b1001)
+			pitch = 50;
+
+
+
+		if(clock==0){
+			pitch = 2;
 		}
 
 
