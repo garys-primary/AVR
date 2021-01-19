@@ -99,8 +99,75 @@ const PROGMEM uint8_t squareTable[] = {0,255};
 
 void outputToPins(int val);
 
+//TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST
+
+//TEST FUNCTION, not to be included in final program
+int cab_bitCounter = 0;
+int cab_outCounter = 0;
+
+int cab_pause = 5;
+int cab_bitWidth = 5;
+int cab_bitSpacing = 0;
+int cab_tail = 20;
+
+int cab_status = 0;
+
+// 00000000001111111111122222222333333333344444444
+// 01234567890123456789023456789012345678901234567
+// |||||||||||||||||||||||||||||||||||||||||||||||
+// -`-_---__-__-``-__-``-``------__-__-``-__-``-``---
+//  st   | - output bits - | -- | - output bits - |
 
 
+int outputCharsAsBits(int byte){
+	int level = 0;
+	cab_outCounter++;
+
+    //start sequence
+    if(cab_outCounter==2)
+        level = 1023;
+    else if(cab_outCounter==4)
+        level = 0;
+	else if(cab_outCounter<=cab_pause){  
+		level = 500;
+
+    //output bits one by one with pauses
+    }else if(cab_outCounter < cab_pause + (cab_bitWidth + cab_bitSpacing) * 8){
+
+        //output a bit cab_bitWidth times
+        if(cab_outCounter < 
+                cab_pause + 
+                (cab_bitWidth + cab_bitSpacing) * cab_bitCounter +
+                (cab_bitWidth) * (1 + cab_bitCounter)
+            ){
+
+            level = 1023 * (1 & (byte >> (7-cab_bitCounter)));
+        
+        //output a divider
+        }else  if(cab_outCounter < 
+                cab_pause + 
+                (cab_bitWidth + cab_bitSpacing) * cab_bitCounter +
+                (cab_bitWidth + cab_bitSpacing) * (1 + cab_bitCounter)
+            ){
+
+            level = 400;
+        }
+        //once that is done, increase bit counter
+        if(cab_outCounter == cab_pause + (cab_bitWidth+cab_bitSpacing) * (1+cab_bitCounter)){
+            level = 400;
+            cab_bitCounter++;
+        }
+            
+	}else if(cab_outCounter < cab_pause + (cab_bitWidth + cab_bitSpacing) * 8 + cab_tail){
+        cab_bitCounter = 0;
+		level = 600;
+    }else
+		cab_outCounter = 0;
+	
+    return level;
+}
+
+//TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST-TEST
 
 
 void initIO(){
@@ -274,6 +341,18 @@ ISR(TIMER1_COMPA_vect){
 	//
 
 
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+	//               TESTS
+	//
+
+	//TEST FUNCTION for scope examination
+	frame = outputCharsAsBits(MIDI_message[0]);
+
+
+	//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 	//::::::::::::::::::::::::::::::::::::::::::::::::
 	/*					NOTES
 					
@@ -403,7 +482,7 @@ int main(void){
 
 
 		//test
-		clock++;
+		/*clock++;
 
 		if((MIDI_message[0] >> 4) == 0b1001)
 			pitch = 50;
@@ -413,7 +492,7 @@ int main(void){
 		if(clock==0){
 			pitch = 2;
 		}
-
+		*/
 
 
 	}
